@@ -5,6 +5,13 @@ import requests
 import csv, codecs, cStringIO
 import sys
 
+
+class Person:
+    def __init__(self, party, name, email):
+        self.party = party
+        self.name = name
+        self.email = email
+
 class UnicodeWriter:
     """
     A CSV writer which will write rows to CSV file "f",
@@ -42,37 +49,59 @@ party_pages = {
     'Miljopartiet': 'http://www.riksdagen.se/sv/ledamoter-partier/Miljopartiet-de-grona/Ledamoter/',
     'Centerpartiet': 'http://www.riksdagen.se/sv/ledamoter-partier/Centerpartiet/Ledamoter/',
     'Vansterpartiet': 'http://www.riksdagen.se/sv/ledamoter-partier/Vansterpartiet/Ledamoter/',
-    'Folkpartiet': 'http://www.riksdagen.se/sv/ledamoter-partier/Folkpartiet/Ledamoter/',
+    'Liberalerna': 'http://www.riksdagen.se/sv/ledamoter-partier/Folkpartiet/Ledamoter/',
     'Kristdemokraterna': 'http://www.riksdagen.se/sv/ledamoter-partier/Kristdemokraterna/Ledamoter/',
 }
 
-print party_pages
-
-with open('names.csv', 'wb') as csvfile:
-    fieldnames = ['first_name', 'last_name', 'email', 'party']
-    writer = UnicodeWriter(csvfile)
-    writer.writerow(fieldnames)
-
+if __name__ == "__main__":
+    all_people = []
     for party, party_page in party_pages.iteritems():
 
         page = requests.get(party_page)
         tree = html.fromstring(page.text)
 
-        names = tree.xpath('//section//dl/dt/a/text()')
-
-
+        # Only include "ledamöter", not "partisekreterare" and such since they don't have emails
+        names = tree.xpath("//*[contains(@class, 'large-12 columns alphabetical component-fellows-list')]//a[contains(@class, 'fellow-item-container')]/@href")
+        root = "http://www.riksdagen.se"
+        unique_name_list = []
         for name in names:
+            full_url = root + name
+            if full_url not in unique_name_list:
+                unique_name_list.append(full_url)
+
+        print unique_name_list
+        print "unique:"
+        for name_url in unique_name_list:
+            print name_url
+            personal_page = requests.get(name_url)
+
+            personal_tree = html.fromstring(personal_page.text)
+            email_list = personal_tree.xpath("//*[contains(@class, 'scrambled-email')]/text()")
+            email_scrambled = email_list[0]
+            email = email_scrambled.replace(u'[på]', '@')
+            print email
+
+            name_list = personal_tree.xpath("//header/h1[contains(@class, 'biggest fellow-name')]/text()")
+            name = name_list[0]
+            name = name.replace("\n", "")
+            name = name.replace("\r", "")
+            name = name[:name.find("(")-1]
             name = name.strip()
             print name
-            last_name = name[0:name.find(",")].strip()
-            first_name = name[name.find(",")+2:name.find("(", name.find(",")+1)].strip()
-            print first_name + ","+last_name
-             
-            emails = tree.xpath('//section//dl[dt/a/text()[contains(., "'+name+'")]]/dd/noscript/text()')
-            email = emails[0]
-            before_at = email.find("riksdagen.se")
-            
-            formatted_email = email[0:before_at-4]+"@riksdagen.se"
-            print formatted_email
-            writer.writerow([first_name, last_name, formatted_email, party])
+            print "-----"
+            person = Person(party, name, email)
+            all_people.append(person)
+
+
+    for person in all_people:
+        print person.party + ", " + person.name + ", " + person.email
+
+    with open('names.csv', 'wb') as csvfile:
+        fieldnames = ['name', 'email', 'party']
+        writer = UnicodeWriter(csvfile)
+        writer.writerow(fieldnames)
+
+        for person in all_people:
+            print person.party + ", " + person.name + ", " + person.email
+            writer.writerow([person.name, person.email, person.party])
 
